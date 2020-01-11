@@ -19,6 +19,7 @@
 	--positive-light: #e2ffd9;
 
 	--checker: conic-gradient(#eee 25%, transparent 0 50%, #eee 0 75%, transparent 0);
+	--finish-display: none;
 }
 
 @media (prefers-color-scheme: dark){

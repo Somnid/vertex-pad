@@ -1,7 +1,7 @@
 import { renderShadedPolyList } from "../lib/svg-3d.js";
 import { fireEvent } from "../lib/utilities.js";
 import { parseColor } from "../lib/color.js";
-import { getProjectionMatrix, getRotationXMatrix, getRotationYMatrix, getRotationZMatrix, multiplyMatrixVector, addVector, subtractVector, crossVector, normalizeVector, dotVector, multiplyVector, divideVector, getIdentityMatrix, multiplyMatrix, getTranslationMatrix, getPointAtMatrix, getLookAtMatrix } from "../lib/vector.js";
+import { getProjectionMatrix, getRotationXMatrix, getRotationYMatrix, getRotationZMatrix, multiplyMatrixVector, addVector, subtractVector, crossVector, normalizeVector, dotVector, multiplyVector, divideVector, getIdentityMatrix, multiplyMatrix, getTranslationMatrix, getLookAtMatrix, UP, FORWARD } from "../lib/vector.js";
 import { cube } from "../data/geometry.js";
 
 customElements.define("wc-geometry-generator",
@@ -68,14 +68,14 @@ customElements.define("wc-geometry-generator",
 						<input id="camera-y" value="0" type="number" step="0.1" />
 						<label for="camera-z">Camera Z:</label>
 						<input id="camera-z" value="0" type="number" step="0.1" />
-						<label for="camera-direction-x">Camera Direction X:</label>
-						<input id="camera-direction-x" value="0" type="number" step="0.1" />
-						<label for="camera-direction-y">Camera Direction Y:</label>
-						<input id="camera-direction-y" value="0" type="number" step="0.1" />
-						<label for="camera-direction-z">Camera Direction Z:</label>
-						<input id="camera-direction-z" value="1" type="number" step="0.1" />
+						<label for="camera-rotation-x">Camera Rotation X:</label>
+						<input id="camera-rotation-x" value="0" type="number" step="0.1" />
+						<label for="camera-rotation-y">Camera Rotation Y:</label>
+						<input id="camera-rotation-y" value="0" type="number" step="0.1" />
+						<label for="camera-rotation-z">Camera Rotation Z:</label>
+						<input id="camera-rotation-z" value="1" type="number" step="0.1" />
 						<label for="keyboard-camera">Keyboard Control</label>
-						<input type="checkbox" id="keyboard-camera" />
+						<input type="checkbox" id="keyboard-camera" checked />
 					</fieldset>
 					<fieldset>
 						<h2>Object Rotation</h2>
@@ -128,9 +128,9 @@ customElements.define("wc-geometry-generator",
 				cameraX: this.shadowRoot.querySelector("#camera-x"),
 				cameraY: this.shadowRoot.querySelector("#camera-y"),
 				cameraZ: this.shadowRoot.querySelector("#camera-z"),
-				cameraDirectionX: this.shadowRoot.querySelector("#camera-direction-x"),
-				cameraDirectionY: this.shadowRoot.querySelector("#camera-direction-y"),
-				cameraDirectionZ: this.shadowRoot.querySelector("#camera-direction-z"),
+				cameraRotationX: this.shadowRoot.querySelector("#camera-rotation-x"),
+				cameraRotationY: this.shadowRoot.querySelector("#camera-rotation-y"),
+				cameraRotationZ: this.shadowRoot.querySelector("#camera-rotation-z"),
 				keyboardCamera: this.shadowRoot.querySelector("#keyboard-camera"),
 				finish: this.shadowRoot.querySelector("#finish"),
 				output: this.shadowRoot.querySelector("#output")
@@ -153,9 +153,9 @@ customElements.define("wc-geometry-generator",
 			this.dom.cameraX.addEventListener("input", this.generate);
 			this.dom.cameraY.addEventListener("input", this.generate);
 			this.dom.cameraZ.addEventListener("input", this.generate);
-			this.dom.cameraDirectionX.addEventListener("input", this.generate);
-			this.dom.cameraDirectionY.addEventListener("input", this.generate);
-			this.dom.cameraDirectionZ.addEventListener("input", this.generate);
+			this.dom.cameraRotationX.addEventListener("input", this.generate);
+			this.dom.cameraRotationY.addEventListener("input", this.generate);
+			this.dom.cameraRotationZ.addEventListener("input", this.generate);
 			this.dom.fill.addEventListener("input", this.generate);
 			document.body.addEventListener("keydown", this.onKeyPress);
 		}
@@ -178,13 +178,19 @@ customElements.define("wc-geometry-generator",
 			const height = 720;
 			const width = 720;
 			const camera = [parseFloat(this.dom.cameraX.value),parseFloat(this.dom.cameraY.value),parseFloat(this.dom.cameraZ.value)];
-			const cameraDirection = [parseFloat(this.dom.cameraDirectionX.value),parseFloat(this.dom.cameraDirectionY.value),parseFloat(this.dom.cameraDirectionZ.value)];
+			const cameraRotations = [
+				degreesToRadians(parseFloat(this.dom.cameraRotationX.value)), 
+				degreesToRadians(parseFloat(this.dom.cameraRotationY.value)), 
+				degreesToRadians(parseFloat(this.dom.cameraRotationZ.value))
+			];
+			const cameraStartingTarget = [0, 0, 1];
+			const cameraRotationMatrix =  multiplyMatrix(multiplyMatrix(getRotationXMatrix(cameraRotations[0]), getRotationYMatrix(cameraRotations[1])), getRotationZMatrix(cameraRotations[2]));
+			const cameraDirection = multiplyMatrixVector(cameraStartingTarget, cameraRotationMatrix);
 			const cameraTarget = addVector(camera, cameraDirection);
 			const lightDirection = normalizeVector([0,0,-1]);
-			const up = [0,1,0];
 
 			const worldMatrix = multiplyMatrix(multiplyMatrix(multiplyMatrix(multiplyMatrix(getIdentityMatrix(), getRotationXMatrix(rotationX)), getRotationYMatrix(rotationY)), getRotationZMatrix(rotationZ)), getTranslationMatrix(translationX, translationY, translationZ));
-			const viewMatrix = getLookAtMatrix(camera, cameraTarget, up);
+			const viewMatrix = getLookAtMatrix(camera, cameraTarget, UP);
 
 			const transformedFaces = faces.map(poly => poly.map(v => multiplyMatrixVector(v, worldMatrix)))
 
@@ -209,6 +215,10 @@ customElements.define("wc-geometry-generator",
 			//camera projection
 			inViewFaces = inViewFaces.map(poly => poly.map(v => multiplyMatrixVector(v, viewMatrix)));
 
+			//clipping
+			inViewFaces = inViewFaces.map(poly => clip(poly, [0, 0, 0.1], [0, 0, 1]))
+									 .filter(poly => poly.length > 0);
+
 			//get light on polygon and scale color, remove culled faces, convert to css color
 			fills = fills
 				.map((f, i) => isBackfaceCulling ? fillIntensity.has(i) ? isLighting ? multiplyVector(f, fillIntensity.get(i)) : f : null : f)
@@ -216,7 +226,7 @@ customElements.define("wc-geometry-generator",
 				.map(f => `rgb(${f[0]},${f[1]},${f[2]},${isNaN(f[3]) ? 1 : f[3]})`);
 
 			if (isPerspective) { //project
-				const zNear = 0;
+				const zNear = 0.1;
 				const zFar = 1000;
 				const fieldOfView = 90;
 				const projectionMatrix = getProjectionMatrix(height - strokeWidth * 2, width - strokeWidth * 2, fieldOfView, zNear, zFar);
@@ -228,6 +238,24 @@ customElements.define("wc-geometry-generator",
 				}));
 			}
 
+			//scale to screen
+			inViewFaces = inViewFaces
+					.map(poly => poly
+					.map(v => addVector(v, [1, 1, 0])) //screen offset 
+					.map(v => [v[0] * 0.5 * width, v[1] * 0.5 * height, v[2]])); //scale to screen
+
+
+			//clip screen
+			inViewFaces = inViewFaces
+				.map(poly => clip(poly, [0, 0, 0         ], [0 , 1 , 0]))
+				.filter(poly => poly.length > 0)
+				.map(poly => clip(poly, [0, height - 1, 0], [0 , -1, 0]))
+				.filter(poly => poly.length > 0)
+				.map(poly => clip(poly, [0, 0, 0         ], [1 , 0 , 0]))
+				.filter(poly => poly.length > 0)
+				.map(poly => clip(poly, [width - 1, 0, 0], [-1, 0 , 0]))
+				.filter(poly => poly.length > 0);
+
 			const svg = renderShadedPolyList(inViewFaces, stroke, strokeWidth, fills, height, width);
 			this.dom.output.innerHTML = "";
 			this.dom.output.appendChild(svg);
@@ -235,43 +263,95 @@ customElements.define("wc-geometry-generator",
 		onKeyPress(e){
 			if(!this.dom.keyboardCamera.checked) return;
 			e.preventDefault();
+
+			const camera = [
+				parseFloat(this.dom.cameraX.value),
+				parseFloat(this.dom.cameraY.value),
+				parseFloat(this.dom.cameraZ.value)
+			];
+			const cameraRotations = [
+				degreesToRadians(parseFloat(this.dom.cameraRotationX.value)),
+				degreesToRadians(parseFloat(this.dom.cameraRotationY.value)),
+				degreesToRadians(parseFloat(this.dom.cameraRotationZ.value))
+			];
+
+			const cameraRotationMatrix = multiplyMatrix(multiplyMatrix(getRotationXMatrix(cameraRotations[0]), getRotationYMatrix(cameraRotations[1])), getRotationZMatrix(cameraRotations[2]));
+			const cameraDirection = multiplyMatrixVector(FORWARD, cameraRotationMatrix);
+			const relativeForward = normalizeVector(cameraDirection);
+
 			switch(e.which){
 				case 37: //left
-					this.dom.cameraDirectionX.value = parseFloat(this.dom.cameraDirectionX.value) - 0.1;
+					this.dom.cameraRotationY.value = wrap(parseFloat(this.dom.cameraRotationY.value) + 1, 360);
 					break;
 				case 38: //up
-					this.dom.cameraDirectionY.value = parseFloat(this.dom.cameraDirectionY.value) + 0.1;
+					this.dom.cameraRotationX.value = wrap(parseFloat(this.dom.cameraRotationX.value) + 1, 360);
 					break;
 				case 39: //right
-					this.dom.cameraDirectionX.value = parseFloat(this.dom.cameraDirectionX.value) + 0.1;
+					this.dom.cameraRotationY.value = wrap(parseFloat(this.dom.cameraRotationY.value) - 1, 360);
 					break;
 				case 40: //down
-					this.dom.cameraDirectionY.value = parseFloat(this.dom.cameraDirectionY.value) - 0.1;
-					break;
-				case 65: //A
-					this.dom.cameraX.value = parseFloat(this.dom.cameraX.value) - 0.1;
-					break;
-				case 68: //D
-					this.dom.cameraX.value = parseFloat(this.dom.cameraX.value) + 0.1;
-					break;
-				case 83: //S
-					this.dom.cameraZ.value = parseFloat(this.dom.cameraZ.value) - 0.1;
-					break;
-				case 87: //W
-					this.dom.cameraZ.value = parseFloat(this.dom.cameraZ.value) + 0.1;
-					break;
-				case 81: //Q
-					this.dom.cameraY.value = parseFloat(this.dom.cameraY.value) + 0.1;
-					break;
-				case 69: //E
-					this.dom.cameraY.value = parseFloat(this.dom.cameraY.value) - 0.1;
+					this.dom.cameraRotationX.value = wrap(parseFloat(this.dom.cameraRotationX.value) - 1, 360);
 					break;
 				case 90: //Z
-					this.dom.cameraDirectionZ.value = parseFloat(this.dom.cameraDirectionZ.value) - 0.1;
+					this.dom.cameraRotationZ.value = wrap(parseFloat(this.dom.cameraRotationZ.value) - 1, 360);
 					break;
 				case 88: //X
-					this.dom.cameraDirectionZ.value = parseFloat(this.dom.cameraDirectionZ.value) + 0.1;
+					this.dom.cameraRotationZ.value = wrap(parseFloat(this.dom.cameraRotationZ.value) + 1, 360);
 					break;
+				case 65: {//A
+					const relativeUp = normalizeVector(subtractVector(UP, multiplyVector(relativeForward, dotVector(UP, relativeForward))));
+					const relativeRight = crossVector(relativeUp, relativeForward);
+					const result = subtractVector(camera, multiplyVector(relativeRight, 0.1));
+
+					this.dom.cameraX.value = result[0];
+					this.dom.cameraY.value = result[1];
+					this.dom.cameraZ.value = result[2];
+					break;
+				}
+				case 68: {//D
+					const relativeUp = normalizeVector(subtractVector(UP, multiplyVector(relativeForward, dotVector(UP, relativeForward))));
+					const relativeRight = crossVector(relativeUp, relativeForward);
+					const result = addVector(camera, multiplyVector(relativeRight, 0.1));
+
+					this.dom.cameraX.value = result[0];
+					this.dom.cameraY.value = result[1];
+					this.dom.cameraZ.value = result[2];
+					break;
+				}
+				case 83: {//S
+					const result = subtractVector(camera, multiplyVector(relativeForward, 0.1));
+
+					this.dom.cameraX.value = result[0];
+					this.dom.cameraY.value = result[1];
+					this.dom.cameraZ.value = result[2];
+					break;
+				}
+				case 87: {//W
+					const result = addVector(camera, multiplyVector(relativeForward, 0.1));
+
+					this.dom.cameraX.value = result[0];
+					this.dom.cameraY.value = result[1];
+					this.dom.cameraZ.value = result[2];
+					break;
+				}
+				case 81: {//Q
+					const relativeUp = normalizeVector(subtractVector(UP, multiplyVector(relativeForward, dotVector(UP, relativeForward))));
+					const result = subtractVector(camera, multiplyVector(relativeUp, 0.1));
+
+					this.dom.cameraX.value = result[0];
+					this.dom.cameraY.value = result[1];
+					this.dom.cameraZ.value = result[2];
+					break;
+				}
+				case 69: {//E
+					const relativeUp = normalizeVector(subtractVector(UP, multiplyVector(relativeForward, dotVector(UP, relativeForward))));
+					const result = addVector(camera, multiplyVector(relativeUp, 0.1));
+
+					this.dom.cameraX.value = result[0];
+					this.dom.cameraY.value = result[1];
+					this.dom.cameraZ.value = result[2];
+					break;
+				}
 			}
 			this.generate();
 		}
@@ -284,4 +364,41 @@ customElements.define("wc-geometry-generator",
 
 function degreesToRadians(deg){
 	return deg * Math.PI / 180;
+}
+
+function wrap(number, end, begin = 0){
+	if(number > end){
+		return number % end;
+	}
+	if(number < begin){
+		return end + (number % end);
+	}
+	return number;
+}
+
+function clip(poly, planePoint, planeNormal){
+	planeNormal =normalizeVector(planeNormal);
+	const emitVerticies = []; 
+
+	let firstDot = dotVector(planeNormal, subtractVector(poly[0], planePoint));
+	let previousDot = 0; //zero insures the first pont behaves normally
+
+	for(let i = 0; i < poly.length; i++){
+		const currentDot = dotVector(planeNormal, subtractVector(poly[i], planePoint));
+		if(currentDot * previousDot < 0){ //one of the points lies outside
+			const t = previousDot / (previousDot - currentDot);
+			const intersect = addVector(poly[i - 1], multiplyVector(subtractVector(poly[i], poly[i - 1]), t));
+			emitVerticies.push(intersect);
+		}
+		if(currentDot >= 0){
+			emitVerticies.push(poly[i])
+		}
+		previousDot = currentDot;
+	}
+	if(previousDot * firstDot < 0){
+		const t = previousDot / (previousDot - firstDot);
+		const intersect = addVector(poly[poly.length - 1], multiplyVector(subtractVector(poly[0], poly[poly.length - 1]), t));
+		emitVerticies.push(intersect);
+	}
+	return emitVerticies;
 }

@@ -1,10 +1,17 @@
-- Camera with FPS Oriented controls
-- Clipping
-
 - Pixel based sizing
-- Light position/direction
+- Configuratable Light position/direction
 - Light color
 - obj support
-
+- smoother controls
+- compass
+- Better fill support
+- Mesh baking
+- Better window sizing
+- Vertex rounding
+- XYZ Scaling
+- Web component API
 - Arbitray Light points
+
 - point and spot light
+- Shadows
+- Z-index clipping

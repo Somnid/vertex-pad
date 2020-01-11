@@ -32,9 +32,6 @@ export function renderShadedPolyList(polygonList, stroke = "black", strokeWidth 
 	svg.setAttributeNS(null, "width", width + strokeWidth * 2);
 
 	polygonList
-		.map(poly => poly
-			.map(v => addVector(v, [1, 1, 0])) //screen offset 
-			.map(v => [v[0] * 0.5 * width, v[1] * 0.5 * height])) //scale to screen
 		.forEach(([first, ...rest], i) => {
 			const path = document.createElementNS(svgns, "path");
 			path.setAttributeNS(null, "d", `M${first[0]} ${first[1]} ${rest.map(v => `L${v[0]} ${v[1]}`).join(" ")} Z`);

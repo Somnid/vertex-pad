@@ -163,3 +163,27 @@ export function crossVector(a, b) {
 export function dotVector(a, b) {
 	return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 }
+
+///
+export function getVectorIntersectPlane(planePoint, planeNormal, lineStart, lineEnd){
+	planeNormal = normalizeVector(planeNormal);
+	const planeDot = dotVector(planePoint, planeNormal);
+	const startDot = dotVector(lineStart, planeNormal);
+	const endDot = dotVector(lineEnd, planeNormal);
+	const t = (planeDot - startDot) / (endDot - startDot);
+	if(t === Infinity || t === -Infinity){
+		return null;
+	}
+	const line = subtractVector(lineEnd, lineStart);
+	const deltaToIntersect = multiplyVector(line, t);
+	return addVector(lineStart, deltaToIntersect);
+}
+
+export function isPointInInsideSpace(point, planeNormal, planePoint){
+	planeNormal = normalizeVector(planeNormal);
+	return dotVector(planeNormal, subtractVector(planePoint, point)) > 0;
+}
+
+export const UP = [0, 1, 0];
+export const FORWARD = [0, 0, 1];
+export const RIGHT = [1, 0, 0];
